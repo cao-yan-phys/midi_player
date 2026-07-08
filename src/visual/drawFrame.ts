@@ -1,0 +1,141 @@
+import type { ParsedMidi } from '../midi/noteTypes'
+import { renderInkFlow } from './inkRenderer'
+import { renderGwWaveform } from './waveformRenderer'
+
+interface DrawFrameOptions {
+  ctx: CanvasRenderingContext2D
+  width: number
+  height: number
+  midi: ParsedMidi | null
+  currentTime: number
+  overviewProgress?: number
+  visibleTracks: ReadonlySet<number>
+  showEmptyState?: boolean
+}
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max)
+
+const paperNoise = (seed: number) => {
+  const value = Math.sin(seed * 12.9898) * 43758.5453
+  return value - Math.floor(value)
+}
+
+export const drawPaperBackground = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  currentTime: number,
+) => {
+  const paperSpeed = clamp(width / 13.5, 44, 92)
+  const fiberSpacing = 54
+  const fleckSpacing = 78
+  const fiberOffset = -((currentTime * paperSpeed) % fiberSpacing)
+  const fleckOffset = -((currentTime * paperSpeed) % fleckSpacing)
+
+  ctx.fillStyle = '#fbfaf4'
+  ctx.fillRect(0, 0, width, height)
+
+  const paperGrain = ctx.createLinearGradient(0, 0, width, height)
+  paperGrain.addColorStop(0, 'rgba(255,255,255,0.22)')
+  paperGrain.addColorStop(0.48, 'rgba(226,216,194,0.08)')
+  paperGrain.addColorStop(1, 'rgba(188,179,156,0.09)')
+  ctx.fillStyle = paperGrain
+  ctx.fillRect(0, 0, width, height)
+
+  ctx.save()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = 'rgba(93, 84, 68, 0.022)'
+
+  for (let y = height * 0.12; y < height * 0.92; y += 28) {
+    for (let x = fiberOffset - fiberSpacing; x < width + fiberSpacing; x += fiberSpacing) {
+      const seed = y * 17 + Math.floor((x - fiberOffset) / fiberSpacing) * 31
+      const segment = 16 + paperNoise(seed) * 34
+      const lift = (paperNoise(seed + 5) - 0.5) * 2.2
+
+      ctx.beginPath()
+      ctx.moveTo(x, y + lift)
+      ctx.bezierCurveTo(
+        x + segment * 0.35,
+        y + lift + (paperNoise(seed + 1) - 0.5) * 1.4,
+        x + segment * 0.68,
+        y + lift + (paperNoise(seed + 2) - 0.5) * 1.4,
+        x + segment,
+        y + lift + (paperNoise(seed + 3) - 0.5) * 1.2,
+      )
+      ctx.stroke()
+    }
+  }
+
+  ctx.fillStyle = 'rgba(93, 84, 68, 0.025)'
+
+  for (let y = 18; y < height; y += fleckSpacing) {
+    for (let x = fleckOffset - fleckSpacing; x < width + fleckSpacing; x += fleckSpacing) {
+      const seed = y * 23 + Math.floor((x - fleckOffset) / fleckSpacing) * 41
+      const px = x + paperNoise(seed) * fleckSpacing
+      const py = y + paperNoise(seed + 7) * fleckSpacing
+      const radius = 0.35 + paperNoise(seed + 11) * 0.9
+
+      ctx.beginPath()
+      ctx.ellipse(px, py, radius * 1.6, radius, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  ctx.restore()
+}
+
+export const drawVisualizationFrame = ({
+  ctx,
+  width,
+  height,
+  midi,
+  currentTime,
+  overviewProgress = 0,
+  visibleTracks,
+  showEmptyState = false,
+}: DrawFrameOptions) => {
+  ctx.clearRect(0, 0, width, height)
+  drawPaperBackground(ctx, width, height, currentTime)
+
+  if (!midi) {
+    if (showEmptyState) {
+      ctx.fillStyle = 'rgba(54, 50, 43, 0.42)'
+      ctx.font = '16px Inter, ui-sans-serif, system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('Drop a MIDI file to begin', width / 2, height / 2)
+    }
+
+    return
+  }
+
+  const waveformHeight = midi.gwWaveform ? clamp(height * 0.24, 96, 158) : 0
+  const inkHeight = Math.max(1, height - waveformHeight)
+  const options = {
+    ctx,
+    width,
+    height: inkHeight,
+    notes: midi.notes,
+    duration: midi.duration,
+    currentTime,
+    overviewProgress,
+    visibleTracks,
+    visualSeed: midi.visualSeed ?? 0,
+  }
+
+  renderInkFlow(options)
+
+  if (midi.gwWaveform) {
+    renderGwWaveform({
+      ctx,
+      width,
+      top: inkHeight,
+      height: waveformHeight,
+      waveform: midi.gwWaveform,
+      duration: midi.duration,
+      currentTime,
+      overviewProgress,
+      visibleTracks,
+    })
+  }
+}
