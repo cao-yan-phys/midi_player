@@ -81,3 +81,4 @@ targetNotes = clamp(12 sqrt(N), 140, 720)
 ## 示例
 
 `sxs_bbh_0001_22.csv`
+该 CSV 是从 `SXS:BBH:0001v2.0 Lev5` ([SXS:BBH:0001 on Zenodo](https://zenodo.org/records/13166927)) 的 `h(2,2)` 模式导出的示例文件。
