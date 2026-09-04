@@ -7,6 +7,7 @@ interface RenderGrandStaffOptions {
   coordinates: CoordinateSystem
   showChromaticLines: boolean
   showStaffLines: boolean
+  highlightedPitches?: ReadonlySet<number>
 }
 
 export const trebleStaffPitches = [64, 67, 71, 74, 77]
@@ -45,6 +46,63 @@ const getChromaticPitchLines = (coordinates: CoordinateSystem) => {
   return pitches
 }
 
+const drawHighlightedPitchLines = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  coordinates: CoordinateSystem,
+  highlightedPitches: ReadonlySet<number>,
+) => {
+  const minimumVisiblePitch = Math.floor(coordinates.pitchRange.min) - 5
+  const maximumVisiblePitch = Math.ceil(coordinates.pitchRange.max) + 5
+
+  ctx.save()
+  ctx.strokeStyle = 'rgba(224, 176, 47, 0.26)'
+  ctx.lineWidth = 5
+  ctx.shadowColor = 'rgba(209, 154, 21, 0.28)'
+  ctx.shadowBlur = 10
+
+  highlightedPitches.forEach((pitch) => {
+    if (pitch < minimumVisiblePitch || pitch > maximumVisiblePitch) {
+      return
+    }
+
+    const y = coordinates.pitchToY(pitch)
+
+    if (y < 6 || y > height - 6) {
+      return
+    }
+
+    ctx.beginPath()
+    ctx.moveTo(0, Math.round(y) + 0.5)
+    ctx.lineTo(width, Math.round(y) + 0.5)
+    ctx.stroke()
+  })
+
+  ctx.shadowBlur = 0
+  ctx.strokeStyle = 'rgba(178, 121, 5, 0.96)'
+  ctx.lineWidth = 1.4
+
+  highlightedPitches.forEach((pitch) => {
+    if (pitch < minimumVisiblePitch || pitch > maximumVisiblePitch) {
+      return
+    }
+
+    const y = coordinates.pitchToY(pitch)
+
+    if (y < 6 || y > height - 6) {
+      return
+    }
+
+    ctx.beginPath()
+    ctx.moveTo(0, Math.round(y) + 0.5)
+    ctx.lineTo(width, Math.round(y) + 0.5)
+    ctx.stroke()
+  })
+
+  ctx.restore()
+}
+
 export const renderGrandStaff = ({
   ctx,
   width,
@@ -52,6 +110,7 @@ export const renderGrandStaff = ({
   coordinates,
   showChromaticLines,
   showStaffLines,
+  highlightedPitches = new Set<number>(),
 }: RenderGrandStaffOptions) => {
   ctx.save()
   if (showChromaticLines) {
@@ -71,6 +130,16 @@ export const renderGrandStaff = ({
     ctx.lineWidth = 1
     drawStaffLines(ctx, width, height, trebleStaffPitches, coordinates)
     drawStaffLines(ctx, width, height, bassStaffPitches, coordinates)
+  }
+
+  if (highlightedPitches.size > 0) {
+    drawHighlightedPitchLines(
+      ctx,
+      width,
+      height,
+      coordinates,
+      highlightedPitches,
+    )
   }
 
   ctx.restore()

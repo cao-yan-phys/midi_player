@@ -1,6 +1,7 @@
 import {
   Eye,
   EyeOff,
+  ChevronDown,
   FlipHorizontal2,
   LoaderCircle,
   Maximize2,
@@ -13,6 +14,7 @@ import {
   RotateCcw,
   ScanSearch,
   Square,
+  Undo2,
   Volume2,
   VolumeX,
 } from 'lucide-react'
@@ -35,6 +37,7 @@ interface ControlsProps {
   currentTime: number
   duration: number
   soundPreset: SoundPreset
+  reversePlayback: boolean
   playbackRate: PlaybackRate
   volume: number
   transposeSemitones: number
@@ -50,6 +53,7 @@ interface ControlsProps {
   onPlay: () => void
   onPause: () => void
   onStop: () => void
+  onToggleReversePlayback: () => void
   onSeek: (time: number) => void
   onSoundPresetChange: (soundPreset: SoundPreset) => void
   onPlaybackRateChange: (playbackRate: PlaybackRate) => void
@@ -104,6 +108,7 @@ export function Controls({
   currentTime,
   duration,
   soundPreset,
+  reversePlayback,
   playbackRate,
   volume,
   transposeSemitones,
@@ -119,6 +124,7 @@ export function Controls({
   onPlay,
   onPause,
   onStop,
+  onToggleReversePlayback,
   onSeek,
   onSoundPresetChange,
   onPlaybackRateChange,
@@ -162,19 +168,42 @@ export function Controls({
         >
           <Square size={15} />
         </button>
-        <select
-          className="sound-select"
-          value={soundPreset}
-          aria-label="Sound preset"
-          onChange={(event) =>
-            onSoundPresetChange(event.currentTarget.value as SoundPreset)
+        <button
+          className={
+            reversePlayback
+              ? 'icon-button reverse-toggle is-active'
+              : 'icon-button reverse-toggle'
           }
+          type="button"
+          disabled={disabled || isPlaying || isPreparing}
+          title={
+            isPlaying || isPreparing
+              ? 'Pause playback to change direction'
+              : reversePlayback
+                ? 'Play forward'
+                : 'Play in reverse'
+          }
+          aria-label={reversePlayback ? 'Play forward' : 'Play in reverse'}
+          onClick={onToggleReversePlayback}
         >
-          <option value="grandPiano">Grand Piano</option>
-          <option value="harmonicPiano">Small Piano</option>
-          <option value="ocarina">Ocarina</option>
-          <option value="musicBox">Music Box</option>
-        </select>
+          <Undo2 size={15} />
+        </button>
+        <div className="sound-select-wrap">
+          <select
+            className="sound-select"
+            value={soundPreset}
+            aria-label="Sound preset"
+            onChange={(event) =>
+              onSoundPresetChange(event.currentTarget.value as SoundPreset)
+            }
+          >
+            <option value="grandPiano">Grand Piano</option>
+            <option value="harmonicPiano">Small Piano</option>
+            <option value="ocarina">Ocarina</option>
+            <option value="musicBox">Music Box</option>
+          </select>
+          <ChevronDown className="sound-select-arrow" size={15} aria-hidden="true" />
+        </div>
         <select
           className="speed-select"
           value={playbackRate}

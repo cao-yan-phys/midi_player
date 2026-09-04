@@ -5,6 +5,7 @@ import type { SymmetryGroups } from '../midi/symmetryAnalysis'
 import { drawVisualizationFrame } from '../visual/drawFrame'
 import { getInkCoordinates } from '../visual/inkRenderer'
 import { renderClefRail } from '../visual/clefRenderer'
+import { KeyboardIndex } from './KeyboardIndex'
 
 interface CanvasViewProps {
   midi: ParsedMidi | null
@@ -20,6 +21,10 @@ interface CanvasViewProps {
   centerSymmetryEnabled: boolean
   showChromaticLines: boolean
   showStaffLines: boolean
+  highlightedPitches: ReadonlySet<number>
+  keyboardOctaveLevel: number
+  pressedKeyboardCodes: ReadonlySet<string>
+  keyboardEnabled: boolean
   keyName: string | null
 }
 
@@ -62,6 +67,10 @@ export function CanvasView({
   centerSymmetryEnabled,
   showChromaticLines,
   showStaffLines,
+  highlightedPitches,
+  keyboardOctaveLevel,
+  pressedKeyboardCodes,
+  keyboardEnabled,
   keyName,
 }: CanvasViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -71,6 +80,7 @@ export function CanvasView({
   const [size, setSize] = useState<CanvasSize>(emptySize)
   const [railSize, setRailSize] = useState<RailSize>(emptyRailSize)
   const [clefFontReady, setClefFontReady] = useState(false)
+  const hasStartedOverviewRef = useRef(false)
 
   useEffect(() => {
     const frame = frameRef.current
@@ -280,12 +290,19 @@ export function CanvasView({
         centerSymmetryEnabled,
         showChromaticLines,
         showStaffLines,
+        highlightedPitches,
         keyName,
         showEmptyState: true,
       })
     }
 
     if (isOverview) {
+      if (hasStartedOverviewRef.current) {
+        draw(currentTime, 1)
+        return
+      }
+
+      hasStartedOverviewRef.current = true
       const startedAt = performance.now()
 
       const animateOverview = (now: number) => {
@@ -306,6 +323,8 @@ export function CanvasView({
         window.cancelAnimationFrame(frameId)
       }
     }
+
+    hasStartedOverviewRef.current = false
 
     if (!isPlaying) {
       draw(currentTime)
@@ -334,6 +353,7 @@ export function CanvasView({
     centerSymmetryEnabled,
     showChromaticLines,
     showStaffLines,
+    highlightedPitches,
     size.height,
     size.width,
     visibleTracks,
@@ -345,6 +365,12 @@ export function CanvasView({
       <aside className="clef-rail" ref={railRef} aria-hidden="true">
         <canvas ref={clefCanvasRef} />
       </aside>
+      {keyboardEnabled ? (
+        <KeyboardIndex
+          octaveLevel={keyboardOctaveLevel}
+          pressedCodes={pressedKeyboardCodes}
+        />
+      ) : null}
       <div className="canvas-frame" ref={frameRef}>
         <canvas ref={canvasRef} />
       </div>

@@ -4,9 +4,16 @@ import { Controls } from './components/Controls'
 import { MidiDropzone } from './components/MidiDropzone'
 import { findMotifGroups } from './midi/motifAnalysis'
 import { analyzeLocalKey } from './midi/keyAnalysis'
+import {
+  DEFAULT_KEYBOARD_OCTAVE_LEVEL,
+  isEditableKeyboardTarget,
+  keyboardOctaveLevelForCode,
+  keyboardPitchForCode,
+} from './playback/keyboardMap'
 import { parseGwCsv } from './midi/parseGwCsv'
 import { parseMidi } from './midi/parseMidi'
 import type { ParsedMidi } from './midi/noteTypes'
+import { reverseMidi } from './midi/reverseMidi'
 import { findSymmetryGroups } from './midi/symmetryAnalysis'
 import { clampTranspose, transposeMidi } from './midi/transposeMidi'
 import {
@@ -38,6 +45,7 @@ function App() {
   const [playbackRate, setPlaybackRate] = useState<PlaybackRate>(1)
   const [volume, setVolume] = useState(DEFAULT_VOLUME)
   const [transposeSemitones, setTransposeSemitones] = useState(0)
+  const [reversePlayback, setReversePlayback] = useState(false)
   const [motifTraceEnabled, setMotifTraceEnabled] = useState(true)
   const [axisSymmetryEnabled, setAxisSymmetryEnabled] = useState(false)
   const [centerSymmetryEnabled, setCenterSymmetryEnabled] = useState(false)
@@ -47,23 +55,34 @@ function App() {
   const [isZen, setIsZen] = useState(false)
   const [isOverview, setIsOverview] = useState(false)
   const [keyName, setKeyName] = useState<string | null>(null)
+  const [pressedKeyboardPitches, setPressedKeyboardPitches] = useState<
+    ReadonlySet<number>
+  >(new Set())
+  const [pressedKeyboardCodes, setPressedKeyboardCodes] = useState<
+    ReadonlySet<string>
+  >(new Set())
+  const [keyboardOctaveLevel, setKeyboardOctaveLevel] = useState(
+    DEFAULT_KEYBOARD_OCTAVE_LEVEL,
+  )
   const appRef = useRef<HTMLDivElement | null>(null)
   const transportRef = useRef<MidiTransport | null>(null)
   const loadRequestIdRef = useRef(0)
   const playRequestIdRef = useRef(0)
-  const midi = useMemo(
-    () =>
-      sourceMidi
-        ? transposeMidi(sourceMidi, transposeSemitones)
-        : null,
-    [sourceMidi, transposeSemitones],
-  )
+  const midi = useMemo(() => {
+    if (!sourceMidi) {
+      return null
+    }
+
+    const transposed = transposeMidi(sourceMidi, transposeSemitones)
+
+    return reversePlayback ? reverseMidi(transposed) : transposed
+  }, [reversePlayback, sourceMidi, transposeSemitones])
   const motifGroups = useMemo(
     () =>
-      sourceKind === 'midi' && sourceMidi
-        ? findMotifGroups(sourceMidi.notes)
+      sourceKind === 'midi' && midi
+        ? findMotifGroups(midi.notes)
         : [],
-    [sourceKind, sourceMidi, findMotifGroups],
+    [sourceKind, midi, findMotifGroups],
   )
   const motifOccurrenceCount = useMemo(
     () =>
@@ -75,10 +94,10 @@ function App() {
   )
   const symmetryGroups = useMemo(
     () =>
-      sourceKind === 'midi' && sourceMidi
-        ? findSymmetryGroups(sourceMidi.notes)
+      sourceKind === 'midi' && midi
+        ? findSymmetryGroups(midi.notes)
         : { axis: [], center: [] },
-    [sourceKind, sourceMidi],
+    [sourceKind, midi],
   )
 
   if (!transportRef.current) {
@@ -95,16 +114,23 @@ function App() {
 
     transportRef.current?.load(parsed.notes, parsed.duration, nextVisibleTracks)
     transportRef.current?.preloadCurrentSound()
+    void transportRef.current?.prepareKeyboardOctave(
+      DEFAULT_KEYBOARD_OCTAVE_LEVEL,
+    )
     setError(null)
     setSourceMidi(parsed)
     setSourceKind(kind)
     setTransposeSemitones(0)
+    setReversePlayback(false)
     setMotifTraceEnabled(kind === 'midi')
     setCurrentTime(0)
     setIsPlaying(false)
     setIsPreparing(false)
     setIsOverview(false)
     setKeyName(null)
+    setKeyboardOctaveLevel(DEFAULT_KEYBOARD_OCTAVE_LEVEL)
+    setPressedKeyboardPitches(new Set())
+    setPressedKeyboardCodes(new Set())
     setVisibleTracks(nextVisibleTracks)
   }, [])
 
@@ -205,7 +231,11 @@ function App() {
   }, [visibleTracks])
 
   useEffect(() => {
-    transportRef.current?.setSoundPreset(soundPreset)
+    const transport = transportRef.current
+    transport?.releaseKeyboardNotes()
+    setPressedKeyboardPitches(new Set())
+    setPressedKeyboardCodes(new Set())
+    transport?.setSoundPreset(soundPreset)
   }, [soundPreset])
 
   useEffect(() => {
@@ -215,6 +245,128 @@ function App() {
   useEffect(() => {
     transportRef.current?.setVolume(volume)
   }, [volume])
+
+  useEffect(() => {
+    const transport = transportRef.current
+
+    if (!midi || isPlaying || isPreparing) {
+      transport?.releaseKeyboardNotes()
+      setPressedKeyboardPitches(new Set())
+      setPressedKeyboardCodes(new Set())
+      return
+    }
+
+    const releaseAll = () => {
+      transport?.releaseKeyboardNotes()
+      setPressedKeyboardPitches(new Set())
+      setPressedKeyboardCodes(new Set())
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isEditableKeyboardTarget(event.target)
+      ) {
+        return
+      }
+
+      const octaveLevel = keyboardOctaveLevelForCode(event.code)
+
+      if (octaveLevel !== undefined) {
+        event.preventDefault()
+
+        if (event.repeat) {
+          return
+        }
+
+        if (octaveLevel !== keyboardOctaveLevel) {
+          releaseAll()
+          setKeyboardOctaveLevel(octaveLevel)
+          void transport?.prepareKeyboardOctave(octaveLevel)
+        }
+
+        return
+      }
+
+      const pitch = keyboardPitchForCode(event.code, keyboardOctaveLevel)
+
+      if (pitch === undefined) {
+        return
+      }
+
+      event.preventDefault()
+
+      if (event.repeat) {
+        return
+      }
+
+      setPressedKeyboardPitches((current) => {
+        if (current.has(pitch)) {
+          return current
+        }
+
+        return new Set(current).add(pitch)
+      })
+      setPressedKeyboardCodes((current) => {
+        if (current.has(event.code)) {
+          return current
+        }
+
+        return new Set(current).add(event.code)
+      })
+      void transport?.previewKeyDown(pitch, keyboardOctaveLevel)
+    }
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      const pitch = keyboardPitchForCode(event.code, keyboardOctaveLevel)
+
+      if (pitch === undefined) {
+        return
+      }
+
+      event.preventDefault()
+      transport?.previewKeyUp(pitch)
+      setPressedKeyboardPitches((current) => {
+        if (!current.has(pitch)) {
+          return current
+        }
+
+        const next = new Set(current)
+        next.delete(pitch)
+        return next
+      })
+      setPressedKeyboardCodes((current) => {
+        if (!current.has(event.code)) {
+          return current
+        }
+
+        const next = new Set(current)
+        next.delete(event.code)
+        return next
+      })
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        releaseAll()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', releaseAll)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('blur', releaseAll)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      transport?.releaseKeyboardNotes()
+    }
+  }, [isPlaying, isPreparing, keyboardOctaveLevel, midi])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -356,6 +508,34 @@ function App() {
     transportRef.current?.setPlaybackRate(nextRate)
   }, [])
 
+  const handleToggleReversePlayback = useCallback(() => {
+    if (!sourceMidi || isPlaying || isPreparing) {
+      return
+    }
+
+    const nextReversePlayback = !reversePlayback
+    const transposed = transposeMidi(sourceMidi, transposeSemitones)
+    const nextMidi = nextReversePlayback ? reverseMidi(transposed) : transposed
+
+    playRequestIdRef.current += 1
+    transportRef.current?.load(nextMidi.notes, nextMidi.duration, visibleTracks)
+    transportRef.current?.preloadCurrentSound()
+    transportRef.current?.seek(0)
+    setReversePlayback(nextReversePlayback)
+    setCurrentTime(0)
+    setIsPlaying(false)
+    setIsPreparing(false)
+    setIsOverview(false)
+    setKeyName(null)
+  }, [
+    isPlaying,
+    isPreparing,
+    reversePlayback,
+    sourceMidi,
+    transposeSemitones,
+    visibleTracks,
+  ])
+
   const handleTransposeChange = useCallback(
     (semitones: number) => {
       const nextTranspose = clampTranspose(semitones)
@@ -366,7 +546,8 @@ function App() {
         return
       }
 
-      const nextMidi = transposeMidi(sourceMidi, nextTranspose)
+      const transposed = transposeMidi(sourceMidi, nextTranspose)
+      const nextMidi = reversePlayback ? reverseMidi(transposed) : transposed
       const transport = transportRef.current
       const wasOverview = isOverview && !isPlaying
       const transportTime = transport?.getCurrentTime() ?? currentTime
@@ -387,7 +568,14 @@ function App() {
 
       setCurrentTime(nextTime)
     },
-    [currentTime, isOverview, isPlaying, sourceMidi, visibleTracks],
+    [
+      currentTime,
+      isOverview,
+      isPlaying,
+      reversePlayback,
+      sourceMidi,
+      visibleTracks,
+    ],
   )
 
   const handleToggleTrack = useCallback((track: number) => {
@@ -477,65 +665,75 @@ function App() {
       </header>
 
       <CanvasView
-        midi={midi}
-        currentTime={currentTime}
-        isPlaying={isPlaying}
-        isOverview={isOverview}
-        getCurrentTime={getTransportTime}
-        visibleTracks={visibleTracks}
-        motifGroups={motifGroups}
-        motifTraceEnabled={motifTraceEnabled && sourceKind === 'midi'}
-        symmetryGroups={symmetryGroups}
-        axisSymmetryEnabled={axisSymmetryEnabled && sourceKind === 'midi'}
-        centerSymmetryEnabled={centerSymmetryEnabled && sourceKind === 'midi'}
-        showChromaticLines={showChromaticLines}
-        showStaffLines={showStaffLines}
-        keyName={keyName}
+            midi={midi}
+            currentTime={currentTime}
+            isPlaying={isPlaying}
+            isOverview={isOverview}
+            getCurrentTime={getTransportTime}
+            visibleTracks={visibleTracks}
+            motifGroups={motifGroups}
+            motifTraceEnabled={motifTraceEnabled && sourceKind === 'midi'}
+            symmetryGroups={symmetryGroups}
+            axisSymmetryEnabled={axisSymmetryEnabled && sourceKind === 'midi'}
+            centerSymmetryEnabled={centerSymmetryEnabled && sourceKind === 'midi'}
+            showChromaticLines={showChromaticLines}
+            showStaffLines={showStaffLines}
+            highlightedPitches={pressedKeyboardPitches}
+            keyboardOctaveLevel={keyboardOctaveLevel}
+            pressedKeyboardCodes={pressedKeyboardCodes}
+            keyboardEnabled={Boolean(midi) && !isPlaying && !isPreparing}
+            keyName={keyName}
       />
 
       {error ? <p className="error-line">{error}</p> : null}
 
       <Controls
-        disabled={!midi}
-        isPlaying={isPlaying}
-        isPreparing={isPreparing}
-        keyAnalysisVisible={Boolean(keyName)}
-        isZen={isZen}
-        currentTime={currentTime}
-        duration={midi?.duration ?? 0}
-        soundPreset={soundPreset}
-        playbackRate={playbackRate}
-        volume={volume}
-        transposeSemitones={transposeSemitones}
-        motifTraceEnabled={motifTraceEnabled}
-        motifOccurrenceCount={motifOccurrenceCount}
-        symmetryAvailable={sourceKind === 'midi'}
-        axisSymmetryEnabled={axisSymmetryEnabled}
-        centerSymmetryEnabled={centerSymmetryEnabled}
-        showChromaticLines={showChromaticLines}
-        showStaffLines={showStaffLines}
-        tracks={midi?.tracks ?? []}
-        visibleTracks={visibleTracks}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onStop={handleStop}
-        onSeek={handleSeek}
-        onSoundPresetChange={setSoundPreset}
-        onPlaybackRateChange={handlePlaybackRateChange}
-        onVolumeChange={setVolume}
-        onTransposeChange={handleTransposeChange}
-        onToggleMotifTrace={() => setMotifTraceEnabled((enabled) => !enabled)}
-        onToggleAxisSymmetry={() => setAxisSymmetryEnabled((enabled) => !enabled)}
-        onToggleCenterSymmetry={() =>
-          setCenterSymmetryEnabled((enabled) => !enabled)
-        }
-        onToggleChromaticLines={() =>
-          setShowChromaticLines((enabled) => !enabled)
-        }
-        onToggleStaffLines={() => setShowStaffLines((enabled) => !enabled)}
-        onToggleKeyAnalysis={handleToggleKeyAnalysis}
-        onToggleTrack={handleToggleTrack}
-        onToggleZen={handleToggleZen}
+            disabled={!midi}
+            isPlaying={isPlaying}
+            isPreparing={isPreparing}
+            keyAnalysisVisible={Boolean(keyName)}
+            isZen={isZen}
+            currentTime={currentTime}
+            duration={midi?.duration ?? 0}
+            soundPreset={soundPreset}
+            reversePlayback={reversePlayback}
+            playbackRate={playbackRate}
+            volume={volume}
+            transposeSemitones={transposeSemitones}
+            motifTraceEnabled={motifTraceEnabled}
+            motifOccurrenceCount={motifOccurrenceCount}
+            symmetryAvailable={sourceKind === 'midi'}
+            axisSymmetryEnabled={axisSymmetryEnabled}
+            centerSymmetryEnabled={centerSymmetryEnabled}
+            showChromaticLines={showChromaticLines}
+            showStaffLines={showStaffLines}
+            tracks={midi?.tracks ?? []}
+            visibleTracks={visibleTracks}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onStop={handleStop}
+            onToggleReversePlayback={handleToggleReversePlayback}
+            onSeek={handleSeek}
+            onSoundPresetChange={setSoundPreset}
+            onPlaybackRateChange={handlePlaybackRateChange}
+            onVolumeChange={setVolume}
+            onTransposeChange={handleTransposeChange}
+            onToggleMotifTrace={() =>
+              setMotifTraceEnabled((enabled) => !enabled)
+            }
+            onToggleAxisSymmetry={() =>
+              setAxisSymmetryEnabled((enabled) => !enabled)
+            }
+            onToggleCenterSymmetry={() =>
+              setCenterSymmetryEnabled((enabled) => !enabled)
+            }
+            onToggleChromaticLines={() =>
+              setShowChromaticLines((enabled) => !enabled)
+            }
+            onToggleStaffLines={() => setShowStaffLines((enabled) => !enabled)}
+            onToggleKeyAnalysis={handleToggleKeyAnalysis}
+            onToggleTrack={handleToggleTrack}
+            onToggleZen={handleToggleZen}
       />
     </main>
   )

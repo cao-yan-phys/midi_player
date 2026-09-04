@@ -230,6 +230,90 @@ p {
   pointer-events: none;
 }
 
+.keyboard-index {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + clamp(12px, 1.6vw, 24px));
+  display: none;
+  width: clamp(132px, 9vw, 156px);
+  transform: translateY(-50%);
+  color: rgba(63, 57, 48, 0.82);
+  font-size: 15px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.keyboard-index__levels {
+  display: flex;
+  justify-content: center;
+  gap: 13px;
+  margin-bottom: 19px;
+  color: rgba(63, 57, 48, 0.78);
+  text-align: center;
+}
+
+.keyboard-index__columns {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: center;
+  column-gap: 15px;
+}
+
+.keyboard-index__column {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+}
+
+.keyboard-index__entry {
+  display: grid;
+  grid-template-columns: 1.35em max-content;
+  align-items: baseline;
+  column-gap: 5px;
+  min-width: 0;
+}
+
+.keyboard-index kbd {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #000;
+  font: inherit;
+  font-weight: 400;
+  text-align: left;
+}
+
+.keyboard-index__entry span {
+  min-width: 0;
+  color: rgba(63, 57, 48, 0.7);
+  white-space: nowrap;
+}
+
+.keyboard-index__entry.is-violin-open-string kbd {
+  color: #2868b0;
+}
+
+.keyboard-index .is-active {
+  color: #b67d09;
+  text-shadow:
+    0 0 1px rgba(255, 240, 175, 0.96),
+    0 0 7px rgba(215, 163, 26, 0.72);
+}
+
+.keyboard-index__entry.is-active span {
+  color: inherit;
+}
+
+.keyboard-index__entry.is-active kbd {
+  color: inherit;
+}
+
+.keyboard-index__entry.is-unavailable {
+  opacity: 0.28;
+}
+
 .clef-rail canvas,
 .canvas-frame canvas {
   position: absolute;
@@ -321,7 +405,7 @@ p {
 .symmetry-toggle-group {
   display: inline-flex;
   flex: 0 0 auto;
-  gap: 4px;
+  gap: 8px;
 }
 
 .axis-symmetry-toggle {
@@ -414,15 +498,41 @@ p {
   font-size: 13px;
 }
 
+.sound-select-wrap {
+  position: relative;
+  flex: 0 0 126px;
+  width: 126px;
+  height: 36px;
+}
+
 .sound-select {
-  width: 154px;
-  max-width: 154px;
+  width: 100%;
+  max-width: none;
+  padding-right: 23px;
+  padding-left: 8px;
+  appearance: none;
+}
+
+.sound-select-arrow {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
 }
 
 .speed-select {
-  width: 88px;
-  max-width: 88px;
-  padding-right: 24px;
+  width: 72px;
+  max-width: 72px;
+  padding-right: 18px;
+  padding-left: 7px;
+}
+
+.reverse-toggle.is-active {
+  border-color: rgba(76, 67, 54, 0.5);
+  background: rgba(230, 224, 210, 0.88);
+  color: #352f27;
 }
 
 .transpose-control,
@@ -613,7 +723,7 @@ p {
     min-width: 0;
   }
 
-  .sound-select,
+  .sound-select-wrap,
   .speed-select,
   .transpose-control,
   .volume-control {
@@ -639,6 +749,7 @@ p {
   .time-readout {
     min-width: 9.5ch;
   }
+
 }
 
 @media (max-width: 1430px) {
@@ -647,6 +758,16 @@ p {
   }
 }
 
+@media (min-width: 1431px) {
+  .keyboard-index {
+    display: block;
+  }
+}
+
 .app-shell:fullscreen .clef-rail {
+  display: none;
+}
+
+.app-shell:fullscreen .keyboard-index {
   display: none;
 }

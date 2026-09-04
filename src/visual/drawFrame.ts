@@ -22,6 +22,7 @@ interface DrawFrameOptions {
   centerSymmetryEnabled?: boolean
   showChromaticLines?: boolean
   showStaffLines?: boolean
+  highlightedPitches?: ReadonlySet<number>
   keyName?: string | null
   showEmptyState?: boolean
 }
@@ -113,6 +114,7 @@ export const drawVisualizationFrame = ({
   centerSymmetryEnabled = false,
   showChromaticLines = true,
   showStaffLines = true,
+  highlightedPitches = new Set<number>(),
   keyName = null,
   showEmptyState = false,
 }: DrawFrameOptions) => {
@@ -158,6 +160,7 @@ export const drawVisualizationFrame = ({
     coordinates,
     showChromaticLines,
     showStaffLines,
+    highlightedPitches,
   })
 
   if (keyName) {
